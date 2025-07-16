@@ -3,7 +3,7 @@ gamd.py: Implements the GaMD integration method.
 
 Portions copyright (c) 2020 University of Kansas
 Authors: Matthew Copeland, Yinglong Miao
-Contributors: Lane Votapka
+Contributors: Lane Votapka, Alex Brueckner
 
 """
 
@@ -278,8 +278,13 @@ class GroupBoostIntegrator(GamdLangevinIntegrator, ABC):
             compute_type):
         # Update window variables
         self.add_compute_global_by_name("Vavg", "{0}", ["wVavg"], compute_type)
+        
+        # Calculate sigmaV, handling the case when windowCount < 2 to avoid division by zero
+        # When windowCount is 1, we have only one sample, so variance is undefined
+        # We use a conditional to set sigmaV to 0 when windowCount < 2
         self.add_compute_global_by_name(
-            "sigmaV", "sqrt({0}/(windowCount-1))", ["M2"], compute_type)
+            "sigmaV", "select(step(windowCount-1.5), sqrt({0}/max(1, windowCount-1)), 0)", 
+            ["M2"], compute_type)
         
         # Reset variables
         self.set_global_by_name_to_value("M2", "0", compute_type)
@@ -314,7 +319,10 @@ class GroupBoostIntegrator(GamdLangevinIntegrator, ABC):
         
         self.add_compute_global_by_name("oldVavg", "{0}", ["wVavg"],
                                         compute_type)
-        self.add_compute_global_by_name("wVavg", "{0} + ({1}-{0})/windowCount",
+        
+        # Handle division by zero when windowCount is 0
+        self.add_compute_global_by_name("wVavg", 
+                                        "select(step(windowCount-0.5), {0} + ({1}-{0})/windowCount, {1})",
                                         ["wVavg", "StartingPotentialEnergy"],
                                         compute_type)
 
@@ -340,8 +348,11 @@ class GroupBoostIntegrator(GamdLangevinIntegrator, ABC):
         # energy is read only.
         #
         
+        # Handle division by zero when Vmax = Vmin (no energy variation)
         self.add_compute_global_by_name(
-            "BoostPotential", "0.5 * {0} * ({1} - {2})^2 / ({3} - {4})", 
+            "BoostPotential", 
+            "select(step(abs({3} - {4})-1e-10), "
+            "0.5 * {0} * ({1} - {2})^2 / ({3} - {4}), 0)", 
             ["k0", "threshold_energy", "StartingPotentialEnergy", "Vmax", 
              "Vmin"], compute_type)
 
@@ -488,6 +499,7 @@ class GroupBoostIntegrator(GamdLangevinIntegrator, ABC):
         not for use with DOF names.)
         """
         names = self.get_names(name)
+        results = {}
         for name in names:
             results[name] = self.getGlobalVariableByName(name)
         return results
@@ -586,8 +598,12 @@ class GroupBoostIntegrator(GamdLangevinIntegrator, ABC):
         self.add_compute_global_by_name("threshold_energy", "{0}", ["Vmax"],
                                         compute_type, group_id)
 
+        # Handle the case when sigmaV is 0 (insufficient statistics) or when Vmax = Vmin (no energy variation)
+        # In these cases, we don't apply any boost (k0prime = 0)
         self.add_compute_global_by_name(
-            "k0prime", "({0}/{1}) * ({2} - {3}) / ({2} - {4})",
+            "k0prime", 
+            "select(step({1}-1e-10) * step(abs({2} - {3})-1e-10) * step(abs({2} - {4})-1e-10), "
+            "({0}/{1}) * ({2} - {3}) / ({2} - {4}), 0)",
             ["sigma0", "sigmaV", "Vmax", "Vmin", "Vavg"],
             compute_type, group_id)
 
@@ -600,8 +616,12 @@ class GroupBoostIntegrator(GamdLangevinIntegrator, ABC):
             self, compute_type):
         self.set_global_by_name_to_value("k0", "1.0", compute_type)
 
+        # Handle the case when sigmaV is 0 (insufficient statistics) or when Vmax = Vmin (no energy variation)
+        # In these cases, we don't apply any boost (k0doubleprime = 0)
         self.add_compute_global_by_name(
-            "k0doubleprime", "(1 - {0}/{1}) * ({2} - {3})/({4} - {3})",
+            "k0doubleprime", 
+            "select(step({1}-1e-10) * step(abs({2} - {3})-1e-10) * step(abs({4} - {3})-1e-10), "
+            "(1 - {0}/{1}) * ({2} - {3})/({4} - {3}), 0)",
             ["sigma0", "sigmaV", "Vmax", "Vmin", "Vavg"], compute_type)
 
         self.add_compute_global_by_name("k0", "{0}", ["k0doubleprime"],
