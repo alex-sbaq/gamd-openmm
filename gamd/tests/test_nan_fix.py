@@ -28,9 +28,6 @@ def test_nan_fix():
     - windowCount = 1 (insufficient statistics)
     - Vmax = Vmin (no energy variation)  
     - sigmaV = 0 (zero variance)
-    
-    Returns:
-        bool: True if no NaN values detected, False otherwise
     """
     
     # Create a simple system
@@ -74,59 +71,33 @@ def test_nan_fix():
     # Test the scenario: run integration steps to trigger edge cases
     print("Testing GaMD boost calculations for NaN stability...")
     
-    nan_detected = False
     for i in range(250):  # Run sufficient steps to trigger all edge cases
         integrator.step(1)
         
         # Check for NaN values in key variables
-        try:
-            sigmaV = integrator.getGlobalVariableByName('sigmaV_Total')
-            k0 = integrator.getGlobalVariableByName('k0_Total')
-            k0prime = integrator.getGlobalVariableByName('k0prime_Total')
-            
-            # Check if any values are NaN
-            if str(sigmaV) == 'nan' or str(k0) == 'nan' or str(k0prime) == 'nan':
-                print(f"ERROR: NaN detected at step {i}")
-                print(f"  sigmaV_Total: {sigmaV}")
-                print(f"  k0_Total: {k0}")
-                print(f"  k0prime_Total: {k0prime}")
-                nan_detected = True
-                break
-                
-        except Exception as e:
-            print(f"Error accessing variables at step {i}: {e}")
-            nan_detected = True
-            break
-    
-    if not nan_detected:
-        print("SUCCESS: No NaN values detected during integration!")
-        
-        # Final validation of all key variables
         sigmaV = integrator.getGlobalVariableByName('sigmaV_Total')
         k0 = integrator.getGlobalVariableByName('k0_Total')
         k0prime = integrator.getGlobalVariableByName('k0prime_Total')
-        windowCount = integrator.getGlobalVariableByName('windowCount')
         
-        print(f"Final values:")
-        print(f"  windowCount: {windowCount}")
-        print(f"  sigmaV_Total: {sigmaV}")
-        print(f"  k0_Total: {k0}")
-        print(f"  k0prime_Total: {k0prime}")
-        
-        return True
-    else:
-        return False
+        # Check if any values are NaN
+        assert str(sigmaV) != 'nan', f"NaN detected in sigmaV at step {i}"
+        assert str(k0) != 'nan', f"NaN detected in k0 at step {i}"
+        assert str(k0prime) != 'nan', f"NaN detected in k0prime at step {i}"
+    
+    print("SUCCESS: No NaN values detected during integration!")
+    
+    # Final validation of all key variables
+    sigmaV = integrator.getGlobalVariableByName('sigmaV_Total')
+    k0 = integrator.getGlobalVariableByName('k0_Total')
+    k0prime = integrator.getGlobalVariableByName('k0prime_Total')
+    windowCount = integrator.getGlobalVariableByName('windowCount')
+    
+    print(f"Final values:")
+    print(f"  windowCount: {windowCount}")
+    print(f"  sigmaV_Total: {sigmaV}")
+    print(f"  k0_Total: {k0}")
+    print(f"  k0prime_Total: {k0prime}")
 
 if __name__ == "__main__":
-    try:
-        success = test_nan_fix()
-        if success:
-            print("\nTest PASSED: NaN bug fix is working correctly!")
-        else:
-            print("\nTest FAILED: NaN bug still present.")
-            sys.exit(1)
-    except Exception as e:
-        print(f"Test failed with exception: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    test_nan_fix()
+    print("\nTest PASSED: NaN bug fix is working correctly!")
